@@ -1,64 +1,62 @@
-from django.db import models
 
-# Create your models here.
+from django.db import models
+from django.core.validators import RegexValidator, EmailValidator
+
+#  Clients Table
 class Client(models.Model):
     name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=50)
+    email = models.EmailField(unique=True, validators=[EmailValidator()])
+    phone = models.CharField(max_length=15, validators=[RegexValidator(regex=r'^\+?\d{9,15}$', message="Invalid phone number")])
 
-
+#  Projects Table (with auto-incrementing Job ID)
 class Project(models.Model):
-    BUILDING_TYPES = [
-        ('Residential', 'Residential'),
-        ('Commercial', 'Commercial'),
-        ('Industrial', 'Industrial'),
+    JOB_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed')
     ]
+
+    project_id = models.AutoField(primary_key=True)  # Auto-incrementing Job ID
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="projects")
-    building_type = models.CharField(max_length=50, choices=BUILDING_TYPES)
+    building_type = models.CharField(max_length=50, choices=[('Residential', 'Residential'), ('Commercial', 'Commercial'), ('Industrial', 'Industrial')])
     address = models.CharField(max_length=255)
     job_type = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     area_size_sqft = models.FloatField()
     start_date = models.DateField()
     end_date = models.DateField()
-    total_gain = models
+    total_gain = models.FloatField()
+    status = models.CharField(max_length=20, choices=JOB_STATUS_CHOICES, default='pending')
 
+# Cost tables
 class Cost(models.Model):
-    project = models.OneToOneField(Project, on_delete=models.CASCADE)
-    body_paint_cost = models.FloatField()
-    trim_paint_cost = models.FloatField()
-    other_paint_cost = models.FloatField()
-    supplies_cost = models.FloatField()
-    additional_service_cost = models.FloatField()
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, primary_key=True)
+    body_paint_cost = models.FloatField(default=0.0)
+    trim_paint_cost = models.FloatField(default=0.0)
+    other_paint_cost = models.FloatField(default=0.0)
+    supplies_cost = models.FloatField(default=0.0)
+    additional_service_cost = models.FloatField(default=0.0)
 
+    def total_cost(self):
+       return self.body_paint_cost + self.trim_paint_cost + self.other_paint_cost + self.supplies_cost + self.additional_service_cos
+    
 
-class Supply(models.Model):
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="supplies")
-    supply_name = models.CharField(max_length=100)
-    supply_cost = models.FloatField()
-
-class Supply(models.Model):
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="supplies")
-    supply_name = models.CharField(max_length=100)
-    supply_cost = models.FloatField()
-
-
-class AdditionalService(models.Model):  # Make sure this is correct!
+#  Additional Services Table
+class AdditionalService(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="services")
     service_name = models.CharField(max_length=100)
     service_cost = models.FloatField()
 
-
+# Employees Table (with first & last name)
 class Employee(models.Model):
-    name = models.CharField(max_length=255)
+    first_name = models.CharField(max_length=255)
+    last_name = models.CharField(max_length=255)
     wage = models.FloatField()
     hours_worked = models.IntegerField()
 
-
+# Employee table
 class ProjectEmployee(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
     hours_worked = models.IntegerField()
-
-
     

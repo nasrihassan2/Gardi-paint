@@ -38,9 +38,10 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # third party 
+    # third party apps
     'rest_framework',
     'django_filters',
+    'drf_yasg', # add swagger doc
 
     'api',  # Our API app
 ]

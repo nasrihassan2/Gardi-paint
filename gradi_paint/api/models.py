@@ -1,12 +1,11 @@
-
 from django.db import models
-from django.core.validators import RegexValidator, EmailValidator
+from django.core.validators import RegexValidator, EmailValidator, FileExtensionValidator
 
 #  Clients Table
 class Client(models.Model):
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True, validators=[EmailValidator()])
-    phone = models.CharField(max_length=15, validators=[RegexValidator(regex=r'^\+?\d{9,15}$', message="Invalid phone number")])
+    phone = models.CharField(max_length=50, validators=[RegexValidator(regex=r'^\+?[\d\-x\.()]+$', message="Invalid phone number")])
 
 #  Projects Table (with auto-incrementing Job ID)
 class Project(models.Model):
@@ -59,4 +58,17 @@ class ProjectEmployee(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
     hours_worked = models.IntegerField()
+
+class PDFDocument(models.Model):
+    file = models.FileField(upload_to='pdfs/', validators=[
+        FileExtensionValidator(allowed_extensions=['pdf', 'csv'])
+    ])
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    processed = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"File uploaded at {self.uploaded_at}"
+
+    class Meta:
+        ordering = ['-uploaded_at']
     

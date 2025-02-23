@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Client, Project, AdditionalService, Employee, ProjectEmployee, Cost
+from .models import Client, Project, AdditionalService, Employee, ProjectEmployee, Cost, PDFDocument
 
 #  Client Serializer (with validation)
 class ClientSerializer(serializers.ModelSerializer):
@@ -37,3 +37,8 @@ class CostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cost
         fields = '__all__'  # Include all cost fields
+
+class PDFDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PDFDocument
+        fields = ['id', 'file', 'uploaded_at', 'processed']

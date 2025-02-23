@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ClientViewSet, ProjectViewSet, CostViewSet, AdditionalServiceViewSet, EmployeeViewSet, ProjectEmployeeViewSet
+from .views import ClientViewSet, ProjectViewSet, CostViewSet, AdditionalServiceViewSet, EmployeeViewSet, ProjectEmployeeViewSet, PDFUploadViewSet, DataManagementViewSet
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -27,6 +27,8 @@ router.register(r'costs', CostViewSet)
 router.register(r'services', AdditionalServiceViewSet)
 router.register(r'employees', EmployeeViewSet)
 router.register(r'project-employees', ProjectEmployeeViewSet)
+router.register(r'pdf-upload', PDFUploadViewSet)
+router.register(r'data-management', DataManagementViewSet, basename='data-management')
 
 # Define API URL patterns
 urlpatterns = [

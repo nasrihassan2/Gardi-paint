@@ -42,3 +42,31 @@ class PDFDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PDFDocument
         fields = ['id', 'file', 'uploaded_at', 'processed']
+
+class CalendarEventSerializer(serializers.ModelSerializer):
+    title = serializers.SerializerMethodField()
+    start = serializers.DateField(source='start_date')
+    end = serializers.DateField(source='end_date')
+    client_name = serializers.CharField(source='client.name')
+    client_email = serializers.CharField(source='client.email')
+    client_phone = serializers.CharField(source='client.phone')
+    
+    def get_title(self, obj):
+        return f"{obj.job_type} - {obj.building_type} ({obj.client.name})"
+
+    class Meta:
+        model = Project
+        fields = [
+            'project_id',
+            'title',
+            'start',
+            'end',
+            'client_name',
+            'client_email',
+            'client_phone',
+            'address',
+            'job_type',
+            'building_type',
+            'status',
+            'description'
+        ]

@@ -1,12 +1,12 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Client, Project, AdditionalService, Employee, ProjectEmployee, Cost, PDFDocument
-from .serializers import ClientSerializer, ProjectSerializer, AdditionalServiceSerializer, EmployeeSerializer, ProjectEmployeeSerializer, CostSerializer, PDFDocumentSerializer
+from .serializers import ClientSerializer, ProjectSerializer, AdditionalServiceSerializer, EmployeeSerializer, ProjectEmployeeSerializer, CostSerializer, PDFDocumentSerializer, CalendarEventSerializer
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 from .filters import ProjectFilter
 from PyPDF2 import PdfReader
@@ -44,6 +44,27 @@ class ProjectViewSet(viewsets.ModelViewSet):
         'total_gain'
     ]
     ordering = ['-start_date']  # Default ordering
+
+    @action(detail=False, methods=['GET'])
+    def calendar_events(self, request):
+        # Get date range from query params or default to current month
+        start = request.query_params.get('start')
+        end = request.query_params.get('end')
+        
+        queryset = self.get_queryset()
+        
+        if start:
+            queryset = queryset.filter(start_date__gte=start)
+        if end:
+            queryset = queryset.filter(end_date__lte=end)
+
+        # Filter by status if provided
+        status = request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        serializer = CalendarEventSerializer(queryset, many=True)
+        return Response(serializer.data)
 
 class CostViewSet(viewsets.ModelViewSet):
     queryset = Cost.objects.all()

@@ -1,9 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ClientViewSet, ProjectViewSet, CostViewSet, AdditionalServiceViewSet, EmployeeViewSet, ProjectEmployeeViewSet
+from .views import ClientViewSet, ProjectViewSet, CostViewSet, AdditionalServiceViewSet, EmployeeViewSet, ProjectEmployeeViewSet, PDFUploadViewSet, DataManagementViewSet
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from django.conf import settings
 
 #  Swagger schema setup
 schema_view = get_schema_view(
@@ -17,23 +18,26 @@ schema_view = get_schema_view(
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
+    url=getattr(settings, 'API_URL', 'http://127.0.0.1:8000/api/'),
 )
 
 #  Register ViewSets
 router = DefaultRouter()
-router.register(r'clients', ClientViewSet)
 router.register(r'projects', ProjectViewSet)
+router.register(r'clients', ClientViewSet)
 router.register(r'costs', CostViewSet)
 router.register(r'services', AdditionalServiceViewSet)
 router.register(r'employees', EmployeeViewSet)
 router.register(r'project-employees', ProjectEmployeeViewSet)
+router.register(r'pdf-upload', PDFUploadViewSet)
+router.register(r'data-management', DataManagementViewSet, basename='data-management')
 
 # Define API URL patterns
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 
     #  Swagger UI and Redoc documentation
-    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-    path('api/schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    path('schema/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
 ]

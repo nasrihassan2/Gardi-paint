@@ -1,0 +1,27 @@
+{
+    "name": "Gradi Paint Development",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "web",
+    "workspaceFolder": "/workspace",
+    "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.autopep8Path": "/usr/local/bin/autopep8",
+        "python.formatting.blackPath": "/usr/local/bin/black",
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.cwd": "/workspace/gradi_paint"
+    },
+    "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "batisteo.vscode-django",
+        "visualstudioexptteam.vscodeintellicode",
+        "ms-azuretools.vscode-docker"
+    ],
+    "forwardPorts": [8000, 3306],
+    "postCreateCommand": "pip list | grep django || pip install -r /workspace/requirements.txt",
+    "remoteUser": "vscode"
+} 

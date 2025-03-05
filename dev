@@ -1,0 +1,449 @@
+#!/usr/bin/env bash
+
+# Get the directory of this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Check if running on Windows
+IS_WINDOWS=false
+if [[ "$(uname -s)" == *"MINGW"* ]] || [[ "$(uname -s)" == *"MSYS"* ]] || [[ "$(uname -s)" == *"CYGWIN"* ]]; then
+  IS_WINDOWS=true
+  echo "🖥️ Detected Windows environment"
+fi
+
+# Make this script executable if it's not already
+if [ ! -x "$0" ] && [ "$IS_WINDOWS" = false ]; then
+  chmod +x "$0"
+  echo "Made dev script executable"
+fi
+
+# Parse dev.yml to get configuration
+if command -v yq &>/dev/null; then
+    DB_NAME=$(yq '.environment.database.name' dev.yml)
+    DB_PASSWORD=$(yq '.environment.database.password' dev.yml)
+    PROJECT_NAME=$(yq '.docker.project_name' dev.yml)
+else
+    # Fallback values if yq is not installed
+    DB_NAME="gardi_paint"
+    DB_PASSWORD="Username12"
+    PROJECT_NAME="gradi_paint"
+    echo "Note: Install 'yq' for better YAML parsing: https://github.com/mikefarah/yq"
+fi
+
+# Export environment variables for docker-compose
+export DB_NAME
+export DB_PASSWORD
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Function to run docker-compose with project name
+run_compose() {
+    if command_exists docker-compose; then
+        docker-compose -p $PROJECT_NAME "$@"
+    elif command_exists docker; then
+        # Try with docker compose subcommand (newer Docker versions)
+        docker compose -p $PROJECT_NAME "$@"
+    else
+        echo "❌ Neither docker-compose nor docker compose commands found"
+        return 1
+    fi
+}
+
+# Function to check for required tools
+check_requirements() {
+    local missing_requirements=false
+
+    if ! command_exists docker; then
+        echo "❌ Docker is not installed. Please install Docker: https://docs.docker.com/get-docker/"
+        missing_requirements=true
+    else
+        # Check if Docker daemon is running
+        if ! docker info &>/dev/null; then
+            echo "❌ Docker daemon is not running. Please start Docker Desktop or the Docker service."
+            missing_requirements=true
+        fi
+    fi
+
+    # Check for docker-compose or docker compose
+    if ! command_exists docker-compose && ! docker compose version &>/dev/null; then
+        echo "❌ Docker Compose is not installed or available. Please install Docker Compose: https://docs.docker.com/compose/install/"
+        missing_requirements=true
+    fi
+
+    if ! command_exists code; then
+        echo "⚠️ VS Code CLI is not installed. You might not be able to use 'dev code'."
+        echo "   Install from: https://code.visualstudio.com/docs/setup/setup-overview"
+    fi
+
+    if [ "$missing_requirements" = true ]; then
+        exit 1
+    fi
+}
+
+# Function to create a local SQLite settings file
+create_local_settings() {
+    local settings_file="gradi_paint/gradi_paint/local_settings.py"
+    
+    if [ ! -f "$settings_file" ]; then
+        echo "from pathlib import Path
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Database
+# https://docs.djangoproject.com/en/3.2/ref/settings/#databases
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = True
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-development-only-key12345'
+
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+" > "$settings_file"
+        
+        # Update settings.py to import local_settings if it exists
+        local main_settings="gradi_paint/gradi_paint/settings.py"
+        if [ -f "$main_settings" ]; then
+            # Check if the import is already there
+            if ! grep -q "local_settings" "$main_settings"; then
+                echo "
+# Import local settings if they exist
+try:
+    from .local_settings import *
+except ImportError:
+    pass
+" >> "$main_settings"
+            fi
+        fi
+        
+        echo "✅ Created local development settings"
+    fi
+}
+
+# Function to install Python requirements
+install_requirements() {
+    echo "📦 Installing Python requirements..."
+    run_compose exec -T web pip install -r /workspace/requirements.txt
+    echo "✅ Requirements installed"
+}
+
+# Function to start the development environment
+start_dev_env() {
+    echo "🚀 Starting development environment..."
+    run_compose up -d
+    
+    # Wait for the database to be ready
+    echo "⏳ Waiting for database to be ready..."
+    sleep 5
+    
+    # Get the container name
+    CONTAINER_NAME="${PROJECT_NAME}-web-1"
+    if [ "$IS_WINDOWS" = true ]; then
+        # On Windows, try both naming conventions
+        if ! docker ps --format "{{.Names}}" | grep -q "$CONTAINER_NAME"; then
+            CONTAINER_NAME="${PROJECT_NAME}_web_1"
+        fi
+    fi
+    
+    # Check if the dev container is running
+    if docker ps --format "{{.Names}}" | grep -q "$CONTAINER_NAME"; then
+        echo "✅ Development environment is up and running!"
+        
+        # Install requirements first
+        install_requirements
+        
+        # Perform initial database migration if needed
+        echo "🔄 Running database migrations..."
+        run_compose exec -T web python manage.py migrate
+        
+        # Start the Django server in the background
+        echo "🌐 Starting Django development server..."
+        run_compose exec -d web python manage.py runserver 0.0.0.0:8000
+        
+        # Open VS Code with the current directory in the container
+        if command_exists code; then
+            echo "🔧 Opening VS Code..."
+            if [ "$IS_WINDOWS" = true ]; then
+                # On Windows, use a different approach to open VS Code
+                echo "Attempting to open VS Code with remote container..."
+                code --folder-uri vscode-remote://attached-container+${CONTAINER_NAME//./}/workspace
+            else
+                code --folder-uri vscode-remote://attached-container+${CONTAINER_NAME//./}/workspace
+            fi
+        else
+            echo "ℹ️ VS Code CLI not found. Open VS Code and use Remote-Containers extension to attach to container: $CONTAINER_NAME"
+        fi
+        
+        echo ""
+        echo "📊 Development URLs:"
+        echo "   - Django: http://localhost:8000"
+        echo "   - API Docs: http://localhost:8000/api/docs/"
+        echo ""
+        echo "📋 Common commands:"
+        echo "   - dev logs      # View logs"
+        echo "   - dev restart   # Restart containers"
+        echo "   - dev down      # Stop environment"
+        echo "   - dev shell     # Access Django shell"
+        echo "   - dev migrate   # Run database migrations"
+        echo "   - dev runserver # Restart the Django server"
+    else
+        echo "❌ Failed to start development environment."
+        echo "Check logs with: docker logs $CONTAINER_NAME"
+    fi
+}
+
+# Function to run Django management commands inside the container
+run_django_command() {
+    run_compose exec web python manage.py "$@"
+}
+
+# Function to get a database shell
+db_shell() {
+    run_compose exec db mysql -u root -p"$DB_PASSWORD" "$DB_NAME"
+}
+
+# Function to set up and start local development environment 
+setup_and_start_local() {
+    echo "🚀 Setting up local development environment (no Docker)..."
+    
+    # Check if Python is installed
+    if ! command_exists python3; then
+        if command_exists python; then
+            # Check Python version
+            PYTHON_VERSION=$(python --version 2>&1 | awk '{print $2}')
+            if [[ "$PYTHON_VERSION" =~ ^3\. ]]; then
+                echo "✅ Using Python $PYTHON_VERSION"
+                PYTHON_CMD="python"
+            else
+                echo "❌ Python 3 is not installed. Please install Python 3: https://www.python.org/downloads/"
+                exit 1
+            fi
+        else
+            echo "❌ Python is not installed. Please install Python 3: https://www.python.org/downloads/"
+            exit 1
+        fi
+    else
+        PYTHON_CMD="python3"
+    fi
+    
+    # Create virtual environment if it doesn't exist
+    if [ ! -d "venv" ]; then
+        echo "📦 Creating Python virtual environment..."
+        $PYTHON_CMD -m venv venv
+    else
+        echo "✅ Virtual environment already exists"
+    fi
+    
+    # Activate virtual environment
+    if [ -f venv/bin/activate ]; then
+        source venv/bin/activate
+    elif [ -f venv/Scripts/activate ]; then
+        source venv/Scripts/activate
+    else
+        echo "❌ Failed to create or activate virtual environment."
+        exit 1
+    fi
+    
+    # Install dependencies if requirements.txt exists
+    if [ -f requirements.txt ]; then
+        echo "📚 Installing Python dependencies..."
+        pip install -r requirements.txt
+    else
+        echo "⚠️ No requirements.txt found. Skipping dependency installation."
+    fi
+    
+    # Create local settings file for SQLite
+    create_local_settings
+    
+    # Navigate to the Django project directory
+    cd gradi_paint
+    
+    # Run migrations
+    echo "🔄 Running database migrations..."
+    python manage.py migrate
+    
+    # Start the Django development server
+    echo "🌐 Starting Django development server..."
+    python manage.py runserver
+}
+
+# Function for fully automated onboarding
+onboard() {
+    echo "🚀 Welcome to Gradi Paint! Setting up your development environment..."
+    
+    # Check if Docker is available and running
+    if command_exists docker && docker info &>/dev/null; then
+        echo "✅ Docker detected and running. Using Docker-based setup."
+        check_requirements
+        start_dev_env
+    else
+        echo "⚠️ Docker not available or not running. Using local development setup."
+        setup_and_start_local
+    fi
+}
+
+case "$1" in
+    onboard)
+        onboard
+        ;;
+    local-setup)
+        echo "🚀 Setting up local development environment (no Docker)..."
+        
+        # Check if Python is installed
+        if ! command_exists python3; then
+            echo "❌ Python 3 is not installed. Please install Python 3: https://www.python.org/downloads/"
+            exit 1
+        fi
+        
+        # Create virtual environment
+        echo "📦 Creating Python virtual environment..."
+        python3 -m venv venv
+        
+        # Activate virtual environment
+        if [ -f venv/bin/activate ]; then
+            source venv/bin/activate
+        elif [ -f venv/Scripts/activate ]; then
+            source venv/Scripts/activate
+        else
+            echo "❌ Failed to create virtual environment."
+            exit 1
+        fi
+        
+        # Install dependencies
+        echo "📚 Installing Python dependencies..."
+        pip install -r requirements.txt
+        
+        # Create local settings file for SQLite
+        create_local_settings
+        
+        echo "✅ Local environment setup complete!"
+        echo ""
+        echo "To start the app locally:"
+        echo "  - Run: dev local-start"
+        ;;
+        
+    local-start)
+        # Activate virtual environment
+        if [ -f venv/bin/activate ]; then
+            source venv/bin/activate
+        elif [ -f venv/Scripts/activate ]; then
+            source venv/Scripts/activate
+        else
+            echo "❌ Virtual environment not found. Run 'dev local-setup' first."
+            exit 1
+        fi
+        
+        # Navigate to the Django project directory
+        cd gradi_paint
+        
+        # Run migrations
+        echo "🔄 Running database migrations..."
+        python manage.py migrate
+        
+        # Start the Django development server
+        echo "🌐 Starting Django development server..."
+        python manage.py runserver
+        ;;
+    local)
+        # Combines setup and start in one command
+        setup_and_start_local
+        ;;
+    up)
+        check_requirements
+        start_dev_env
+        ;;
+    down)
+        echo "🛑 Stopping development environment..."
+        run_compose down
+        echo "✅ Development environment stopped."
+        ;;
+    restart)
+        echo "🔄 Restarting development environment..."
+        run_compose down
+        start_dev_env
+        ;;
+    install)
+        echo "📦 Installing Python requirements..."
+        install_requirements
+        ;;
+    logs)
+        if [ "$2" = "db" ]; then
+            run_compose logs -f db
+        elif [ "$2" = "web" ]; then
+            run_compose logs -f web
+        else
+            run_compose logs -f
+        fi
+        ;;
+    shell)
+        echo "🐚 Starting Django shell..."
+        run_django_command shell
+        ;;
+    dbshell)
+        echo "🔍 Starting database shell..."
+        db_shell
+        ;;
+    migrate)
+        echo "🔄 Running database migrations..."
+        run_django_command makemigrations
+        run_django_command migrate
+        ;;
+    runserver)
+        echo "🌐 Starting Django development server..."
+        run_compose exec -d web python manage.py runserver 0.0.0.0:8000
+        echo "✅ Django server is running at http://localhost:8000"
+        ;;
+    code)
+        if command_exists code; then
+            # Get the container name
+            CONTAINER_NAME="${PROJECT_NAME}-web-1"
+            if [ "$IS_WINDOWS" = true ]; then
+                # On Windows, try both naming conventions
+                if ! docker ps --format "{{.Names}}" | grep -q "$CONTAINER_NAME"; then
+                    CONTAINER_NAME="${PROJECT_NAME}_web_1"
+                fi
+            fi
+            code --folder-uri vscode-remote://attached-container+${CONTAINER_NAME//./}/workspace
+        else
+            echo "❌ VS Code CLI is not installed."
+        fi
+        ;;
+    *)
+        echo "Gradi Paint Development Environment Helper"
+        echo ""
+        echo "Usage: ./dev [command]"
+        echo ""
+        echo "🔹 Onboarding Commands:"
+        echo "  onboard   Fully automated setup - tries Docker first, falls back to local"
+        echo "  local     Quick setup and start of local environment (no Docker needed)"
+        echo ""
+        echo "🔹 Docker-based Commands:"
+        echo "  up        Start development environment with Docker"
+        echo "  down      Stop development environment"
+        echo "  restart   Restart development environment"
+        echo "  install   Install Python requirements"
+        echo "  logs      View logs from all containers"
+        echo "  logs web  View logs from web container"
+        echo "  logs db   View logs from database container"
+        echo "  shell     Start a Django shell"
+        echo "  dbshell   Start a database shell"
+        echo "  migrate   Run database migrations"
+        echo "  runserver Start the Django server"
+        echo "  code      Open VS Code connected to the dev container"
+        echo ""
+        echo "🔹 Local Development Commands (no Docker):"
+        echo "  local-setup  Setup local virtual environment"
+        echo "  local-start  Start the Django development server locally"
+        echo ""
+        ;;
+esac 

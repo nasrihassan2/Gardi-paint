@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      - MYSQL_DATABASE=${DB_NAME:-gardi_paint}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-Username12}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD:-Username12}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspace
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DEBUG=1
+      - DB_HOST=db
+      - DB_NAME=${DB_NAME:-gardi_paint}
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:-Username12}
+    working_dir: /workspace/gradi_paint
+    command: /bin/bash -c "sleep infinity"
+
+volumes:
+  mysql_data: 

@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+
+# Get the directory of this script
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Make this script executable if it's not already
+if [ ! -x "$0" ]; then
+  chmod +x "$0"
+  echo "Made dev script executable"
+fi
+
+# Parse dev.yml to get configuration
+if command -v yq &>/dev/null; then
+    DB_NAME=$(yq '.environment.database.name' dev.yml)
+    DB_PASSWORD=$(yq '.environment.database.password' dev.yml)
+    PROJECT_NAME=$(yq '.docker.project_name' dev.yml)
+else
+    # Fallback values if yq is not installed
+    DB_NAME="gardi_paint"
+    DB_PASSWORD="Username12"
+    PROJECT_NAME="gradi_paint"
+    echo "Note: Install 'yq' for better YAML parsing: https://github.com/mikefarah/yq"
+fi
+
+# Export environment variables for docker-compose
+export DB_NAME
+export DB_PASSWORD
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Function to check for required tools
+check_requirements() {
+    local missing_requirements=false
+
+    if ! command_exists docker; then
+        echo "❌ Docker is not installed. Please install Docker: https://docs.docker.com/get-docker/"
+        missing_requirements=true
+    fi
+
+    if ! command_exists docker-compose; then
+        echo "❌ Docker Compose is not installed. Please install Docker Compose: https://docs.docker.com/compose/install/"
+        missing_requirements=true
+    fi
+
+    if ! command_exists code; then
+        echo "⚠️ VS Code CLI is not installed. You might not be able to use 'dev code'."
+        echo "   Install from: https://code.visualstudio.com/docs/setup/setup-overview"
+    fi
+
+    if [ "$missing_requirements" = true ]; then
+        exit 1
+    fi
+}
+
+# Function to install Python requirements
+install_requirements() {
+    echo "📦 Installing Python requirements..."
+    docker-compose -p $PROJECT_NAME exec -T web pip install -r /workspace/requirements.txt
+    echo "✅ Requirements installed"
+}
+
+# Function to start the development environment
+start_dev_env() {
+    echo "🚀 Starting development environment..."
+    docker-compose -p $PROJECT_NAME up -d
+    
+    # Wait for the database to be ready
+    echo "⏳ Waiting for database to be ready..."
+    sleep 5
+    
+    # Check if the dev container is running
+    if [ "$(docker-compose -p $PROJECT_NAME ps -q web)" ]; then
+        echo "✅ Development environment is up and running!"
+        
+        # Install requirements first
+        install_requirements
+        
+        # Perform initial database migration if needed
+        echo "🔄 Running database migrations..."
+        docker-compose -p $PROJECT_NAME exec -T web python manage.py migrate
+        
+        # Start the Django server in the background
+        echo "🌐 Starting Django development server..."
+        docker-compose -p $PROJECT_NAME exec -d web python manage.py runserver 0.0.0.0:8000
+        
+        # Open VS Code with the current directory in the container
+        if command_exists code; then
+            echo "🔧 Opening VS Code..."
+            code --folder-uri vscode-remote://attached-container+$(echo "$PROJECT_NAME-web-1" | tr -d '.')/workspace
+        else
+            echo "ℹ️ VS Code CLI not found. Open VS Code and use Remote-Containers extension to attach to container: $PROJECT_NAME-web-1"
+        fi
+        
+        echo ""
+        echo "📊 Development URLs:"
+        echo "   - Django: http://localhost:8000"
+        echo "   - API Docs: http://localhost:8000/api/docs/"
+        echo ""
+        echo "📋 Common commands:"
+        echo "   - dev logs      # View logs"
+        echo "   - dev restart   # Restart containers"
+        echo "   - dev down      # Stop environment"
+        echo "   - dev shell     # Access Django shell"
+        echo "   - dev migrate   # Run database migrations"
+        echo "   - dev runserver # Restart the Django server"
+    else
+        echo "❌ Failed to start development environment."
+    fi
+}
+
+# Function to run Django management commands inside the container
+run_django_command() {
+    docker-compose -p $PROJECT_NAME exec web python manage.py "$@"
+}
+
+# Function to get a database shell
+db_shell() {
+    docker-compose -p $PROJECT_NAME exec db mysql -u root -p"$DB_PASSWORD" "$DB_NAME"
+}
+
+case "$1" in
+    up)
+        check_requirements
+        start_dev_env
+        ;;
+    down)
+        echo "🛑 Stopping development environment..."
+        docker-compose -p $PROJECT_NAME down
+        echo "✅ Development environment stopped."
+        ;;
+    restart)
+        echo "🔄 Restarting development environment..."
+        docker-compose -p $PROJECT_NAME down
+        start_dev_env
+        ;;
+    install)
+        echo "📦 Installing Python requirements..."
+        install_requirements
+        ;;
+    logs)
+        if [ "$2" = "db" ]; then
+            docker-compose -p $PROJECT_NAME logs -f db
+        elif [ "$2" = "web" ]; then
+            docker-compose -p $PROJECT_NAME logs -f web
+        else
+            docker-compose -p $PROJECT_NAME logs -f
+        fi
+        ;;
+    shell)
+        echo "🐚 Starting Django shell..."
+        run_django_command shell
+        ;;
+    dbshell)
+        echo "🔍 Starting database shell..."
+        db_shell
+        ;;
+    migrate)
+        echo "🔄 Running database migrations..."
+        run_django_command makemigrations
+        run_django_command migrate
+        ;;
+    runserver)
+        echo "🌐 Starting Django development server..."
+        docker-compose -p $PROJECT_NAME exec -d web python manage.py runserver 0.0.0.0:8000
+        echo "✅ Django server is running at http://localhost:8000"
+        ;;
+    code)
+        if command_exists code; then
+            code --folder-uri vscode-remote://attached-container+$(echo "$PROJECT_NAME-web-1" | tr -d '.')/workspace
+        else
+            echo "❌ VS Code CLI is not installed."
+        fi
+        ;;
+    *)
+        echo "Gradi Paint Development Environment Helper"
+        echo ""
+        echo "Usage: ./dev [command]"
+        echo ""
+        echo "Commands:"
+        echo "  up        Start development environment"
+        echo "  down      Stop development environment"
+        echo "  restart   Restart development environment"
+        echo "  install   Install Python requirements"
+        echo "  logs      View logs from all containers"
+        echo "  logs web  View logs from web container"
+        echo "  logs db   View logs from database container"
+        echo "  shell     Start a Django shell"
+        echo "  dbshell   Start a database shell"
+        echo "  migrate   Run database migrations"
+        echo "  runserver Start the Django server"
+        echo "  code      Open VS Code connected to the dev container"
+        echo ""
+        ;;
+esac 

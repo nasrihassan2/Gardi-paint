@@ -1,0 +1,29 @@
+# Development Environment Configuration
+environment:
+  # Database settings
+  database:
+    name: gardi_paint
+    user: root
+    password: Username12
+    host: db
+    port: 3306
+  
+  # Django application settings
+  application:
+    port: 8000
+    debug: true
+    allowed_hosts: localhost,127.0.0.1
+
+# Docker configuration
+docker:
+  compose_file: docker-compose.yml
+  project_name: gradi_paint
+  
+# VSCode configuration
+vscode:
+  extensions:
+    - ms-python.python
+    - ms-python.vscode-pylance 
+    - batisteo.vscode-django
+    - visualstudioexptteam.vscodeintellicode
+    - ms-azuretools.vscode-docker 
